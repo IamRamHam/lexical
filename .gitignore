@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+node_modules/
+.pnpm-store/
+dist/
+.dist-build-*/
+test-results/
+/data/source/*
+!/data/source/original.sha256
+/data/release/site-data.json.gz.*.tmp
+/supabase/.temp/
+/supabase/.branches/

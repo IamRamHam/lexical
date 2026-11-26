@@ -1,0 +1,14 @@
+Phonetic カードの練習音声
+
+sound-*.wav は人による発音の録音です。発音記号ごとの録音者、原典、ライセンス、切り出した秒数は同じフォルダーの phoneme-audio-credits.txt にあります。
+
+word-*.wav は、対応する例語を Microsoft Zira Desktop の米語音声で生成したお手本です。各ファイルの音量と前後の余白を調整しました。
+
+英文の読み上げ
+
+同梱の英語音声は PicoVox 2.0.3 の米語音声モデルを使用しています。
+Safari系エンジンでも同じモデルを読めるよう、埋め込みの圧縮データ2件を可逆的に展開して同梱しています。生成される音声は変更前と同じです。
+PicoVox © 2026 Craig A. Hobbs. MIT License.
+ライセンス全文は同じフォルダーの english-voice-LICENSE.txt にあります。
+配布元 https://www.npmjs.com/package/picovox/v/2.0.3
+ソース https://github.com/craigahobbs/picovox
