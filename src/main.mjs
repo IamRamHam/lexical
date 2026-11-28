@@ -9,15 +9,16 @@ import * as view from './views.mjs';
 const main = document.querySelector('#main');
 const globalMessage = document.querySelector('#global-message');
 const audio = new WordAudio();
-const wordsPerPage = 30;
+let wordsPerPage = 30;
 let db, store, client, sync, account, config, words, byId;
 let state = emptyState();
 let busy = false, accountLoading = false, accountError = false, pendingSave = false;
 let route = 'home', wordId, viewId, presentedQuestion, requestedAccountVersion = 0;
 let revealed = false, typingDraft = '', composing = false, lastComposition = -Infinity, feedback = null;
 let attributionData = null, attributionRequest = null;
-const spec = { mode: 'recommended', category: '', stars: '', order: 'registered', start: 1, end: 50, count: null, includeEarly: false };
-const filters = { query: '', category: '', stars: '', status: '', page: 1 };
+const spec = { mode: 'recommended', category: 'SUPPLEMENTARY', order: 'registered', start: 1, end: 2, count: null, includeEarly: false };
+const filters = { query: '', category: '', status: '', page: 1, pageSize: 30 };
+let setupStep = 1;
 let selectedDay = studyDay(), month = selectedDay.slice(0, 7), lastDay = selectedDay;
 
 const changes = 'BroadcastChannel' in window ? new BroadcastChannel('lexical.study.v1') : null;
@@ -89,7 +90,7 @@ function render({ focus = false, animateAnswer = false } = {}) {
   } else if (route === 'result' && state.session && !inProgress(state.session)) {
     body = view.result(state.session, byId);
   } else if (route === 'words') {
-    body = view.wordsPage(filters, state.settings.method);
+    body = view.wordsPage(filters);
   } else if (route === 'word' && byId.has(wordId)) {
     body = view.wordDetail(byId.get(wordId), state, Date.now(), locked());
   } else if (route === 'records') {
@@ -99,7 +100,9 @@ function render({ focus = false, animateAnswer = false } = {}) {
   } else if (route === 'sources') {
     body = view.sources(attributionData);
   } else {
-    body = view.home(state, spec, lessonPool(words, state, lessonSpec(), Date.now()).length, Date.now(), locked());
+    const pool = lessonPool(words, state, lessonSpec(), Date.now());
+    const indexCount = Math.max(1, ...pool.flatMap(word => word.memberships.filter(m => m.category === spec.category).map(m => m.index)));
+    body = view.home(state, spec, pool.length, indexCount, Date.now(), locked(), setupStep);
   }
   const top = route === 'lesson' ? '' : view.nav(route === 'word' ? 'words' : route);
   main.innerHTML = top + '<div class="view-content">' + body + '</div>';
@@ -141,16 +144,16 @@ function renderList() {
   const query = searchKey(filters.query.trim());
   const now = Date.now();
   listedWords = words.filter(word => {
-    if (!word.memberships.some(m => (!filters.category || filters.category === m.category) &&
-        (!filters.stars || Number(filters.stars) === m.stars))) return false;
+    if (!word.memberships.some(m => !filters.category || filters.category === m.category)) return false;
     if (query && !word.search.includes(query)) return false;
     if (!filters.status) return true;
-    const p = effectiveProgress(state.progress[progressKey(word.id, state.settings.method)], now);
+    const p = effectiveProgress(state.progress[progressKey(word.id)], now);
     if (filters.status === 'difficult') return Boolean(state.tags[word.id]);
     if (filters.status === 'mastered') return p.mastered;
     if (filters.status === 'new') return p.lastAnswered === null;
     return p.lastAnswered !== null && !p.mastered;
   });
+  wordsPerPage = Number(filters.pageSize) || 30;
   filters.page = Math.min(filters.page, Math.max(1, Math.ceil(listedWords.length / wordsPerPage)));
   block.innerHTML = view.wordResults(listedWords, state, filters.page, wordsPerPage, locked(), now);
 }
@@ -220,7 +223,7 @@ async function persist(operation, element) {
   return ok;
 }
 
-async function confirmAnswer(correct, input, gaveUp, element) {
+async function confirmAnswer(correct, input, gaveUp, element, { swipe = false } = {}) {
   const s = state.session;
   if (locked() || route !== 'lesson' || s?.id !== viewId || !inProgress(s) || feedback) return;
   const question = presentedQuestion;
@@ -240,6 +243,15 @@ async function confirmAnswer(correct, input, gaveUp, element) {
     return;
   }
   feedback = state.session.last;
+  if (swipe) {
+    const card = main.querySelector('.quiz-card');
+    card?.classList.add(correct ? 'swipe-right' : 'swipe-left');
+    await new Promise(resolve => setTimeout(resolve, 190));
+    resetQuestion();
+    render({ focus: true, animateAnswer: false });
+    if (s.method === 'en-ja') play(quizWord());
+    return;
+  }
   render({ animateAnswer: true });
   main.querySelector('[data-action="next"],[data-action="finish"]')?.focus({ preventScroll: true });
   if (s.method === 'typing') play(current);
@@ -286,6 +298,12 @@ main.addEventListener('compositionend', e => {
   lastComposition = performance.now();
 });
 main.addEventListener('keydown', e => {
+  if (route === 'lesson' && state.session?.method !== 'typing' && revealed && !feedback &&
+      (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+    e.preventDefault();
+    void confirmAnswer(e.key === 'ArrowRight', null, false, null, { swipe: true });
+    return;
+  }
   if (e.target.id !== 'typing-input' || e.key !== 'Enter') return;
   if (e.isComposing || composing || e.keyCode === 229 || performance.now() - lastComposition < 90) {
     e.preventDefault();
@@ -294,6 +312,22 @@ main.addEventListener('keydown', e => {
   if (!e.target.value.trim()) {
     e.preventDefault();
     if (!e.repeat) void giveUp(e.target.form.querySelector('button[type="submit"]'));
+  }
+});
+
+let swipeStart = null;
+main.addEventListener('pointerdown', event => {
+  if (route === 'lesson' && state.session?.method !== 'typing' && revealed && !feedback) {
+    swipeStart = { x: event.clientX, y: event.clientY };
+  }
+});
+main.addEventListener('pointerup', event => {
+  if (!swipeStart || route !== 'lesson' || state.session?.method === 'typing' || !revealed || feedback) return;
+  const dx = event.clientX - swipeStart.x;
+  const dy = event.clientY - swipeStart.y;
+  swipeStart = null;
+  if (Math.abs(dx) > 56 && Math.abs(dx) > Math.abs(dy) * 1.4) {
+    void confirmAnswer(dx > 0, null, false, null, { swipe: true });
   }
 });
 
@@ -314,20 +348,20 @@ main.addEventListener('change', async e => {
     return;
   }
   const form = e.target.form?.id;
-  if (form === 'start-form' && ['category', 'stars', 'order', 'includeEarly'].includes(name)) {
+  if (form === 'start-form' && ['category', 'order', 'includeEarly'].includes(name)) {
     spec[name] = name === 'includeEarly' ? checked : value;
-    if (spec.category === 'SUPPLEMENTARY') spec.stars = '';
-    if (name === 'category' || name === 'stars') {
+    if (name === 'category') {
       spec.start = 1;
-      spec.end = Math.max(1, Math.min(50, lessonPool(words, state, { ...lessonSpec(), mode: 'normal' }, Date.now()).length));
+      const indices = lessonPool(words, state, { ...lessonSpec(), mode: 'normal' }, Date.now()).flatMap(word =>
+        word.memberships.filter(m => m.category === spec.category).map(m => m.index));
+      spec.end = Math.max(1, Math.min(2, Math.max(...indices)));
     }
     render();
     document.querySelector('#start-form [name="' + name + '"]')?.focus({ preventScroll: true });
-  } else if (form === 'word-filters' && ['category', 'stars', 'status'].includes(name)) {
+  } else if (form === 'word-filters' && ['category', 'status', 'pageSize'].includes(name)) {
     filters[name] = value;
     filters.page = 1;
-    if (filters.category === 'SUPPLEMENTARY') filters.stars = '';
-    render();
+    if (name === 'pageSize') renderList(); else render();
     document.querySelector('#word-filters [name="' + name + '"]')?.focus({ preventScroll: true });
   }
 });
@@ -391,6 +425,7 @@ main.addEventListener('click', async e => {
   if (ds.speak) { play(byId.get(ds.speak), true); return; }
   if (ds.method) {
     if (await persist(action('settings', { settings: { method: ds.method } }), control)) {
+      setupStep = 2;
       render();
       document.querySelector('[data-method="' + ds.method + '"]')?.focus({ preventScroll: true });
     }
@@ -398,6 +433,7 @@ main.addEventListener('click', async e => {
   }
   if (ds.mode) {
     spec.mode = ds.mode; spec.count = null;
+    setupStep = 3;
     render();
     document.querySelector('[data-mode="' + ds.mode + '"]')?.focus({ preventScroll: true });
     return;
@@ -414,11 +450,15 @@ main.addEventListener('click', async e => {
   if (ds.day) { selectedDay = ds.day; drawCalendar(ds.day); return; }
   switch (ds.action) {
     case 'scroll-setup': {
+      setupStep = 1;
+      render();
       const focusTarget = document.querySelector('#goal-setup input, #start-form [data-method][aria-pressed="true"]');
       document.querySelector('#setup').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
       focusTarget?.focus({ preventScroll: true });
       break;
     }
+    case 'setup-back':
+      setupStep = Math.max(1, setupStep - 1); render(); break;
     case 'resume':
       audio.unlock(); notice(); go('lesson'); break;
     case 'discard':
@@ -471,6 +511,7 @@ main.addEventListener('click', async e => {
       break;
     case 'logout':
       if (!client || busy) break;
+      if (!confirm('Googleアカウントからログアウトしますか？ このブラウザではゲストとして続けられます。')) break;
       control.disabled = true;
       try {
         const { error } = await client.auth.signOut({ scope: 'local' });

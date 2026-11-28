@@ -74,9 +74,7 @@ for (const [index, w] of words.entries()) {
     assert.deepEqual(w.alts.map(a => a.text), input.typing_question.unused_expressions.items.map(a => a.expression));
     assert.deepEqual(w.answerPolicy.punctuation_aliases, input.answer_policy.punctuation_aliases);
   }
-  if (w.memberships.some(m => m.category === 'SUPPLEMENTARY')) {
-    assert.equal(w.memberships.find(m => m.category === 'SUPPLEMENTARY').stars, null);
-  }
+  for (const membership of w.memberships) assert(Number.isInteger(membership.index) && membership.index >= 1);
 }
 if (original) {
   const byId = new Map(words.map(w => [w.id, w]));
@@ -90,13 +88,9 @@ if (original) {
 for (const [category, size] of Object.entries(categories)) {
   const members = words.flatMap(w => w.memberships.filter(m => m.category === category)).sort((a,b) => a.rank - b.rank);
   assert.equal(members.length, size);
-  if (category === 'SUPPLEMENTARY') continue;
-  const bands = [0, 0, 0, 0, 0];
-  members.forEach((m, i) => {
-    assert.equal(m.stars, 5 - Math.floor(i * 5 / members.length));
-    bands[m.stars - 1]++;
-  });
-  assert(Math.max(...bands) - Math.min(...bands) <= 1);
+  const last = size % 30;
+  const count = Math.ceil(size / 30) - (last > 0 && last < 10 ? 1 : 0);
+  members.forEach((m, i) => assert.equal(m.index, Math.min(Math.ceil((i + 1) / 30), count)));
 }
 assert.equal(words.find(w => w.lemma === 'damn').senses.length, 3);
 assert(words.find(w => w.lemma === 'permit').alts.find(a => a.text === 'license').scopes.length === 2);

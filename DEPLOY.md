@@ -34,6 +34,12 @@ Gitの認証画面が表示されたら、ご自身のアカウントで操作�
 3. ダッシュボードの `Connect` または `Settings → API Keys` で **Project URL** と **Publishable key** を控えます。公開側で使うキーは `sb_publishable_…` です。データベースのパスワードと `sb_secret_…`／`service_role` は管理用に保管します。 [公開用と管理用のAPIキー](https://supabase.com/docs/guides/getting-started/api-keys)
 4. `Authentication → URL Configuration` で **Site URL** を実際の公開URL（例 `https://OWNER.github.io/lexical/`）にします。**Redirect URLs** にも同じURLを登録します。PC版のゲスト記録を取り込む場合やローカルで動作確認する場合は `http://127.0.0.1:4173/` も追加します。リポジトリ名のパスと末尾の `/` まで一致させます。 [SupabaseのリダイレクトURL](https://supabase.com/docs/guides/auth/redirect-urls)
 
+### 既存のLexicalをv1.1へ更新する場合
+
+今回の「回答方法をまたいだ共有進捗」を使うには、初期SQLを再実行せず、[共有進捗の移行SQL](supabase/migrations/202611280001_unified_progress.sql)を1回だけ追加適用します。Supabaseの `SQL Editor → New query` にファイル全体を貼り付け、**Run** を押します。
+
+このSQLは既存の回答方法別レコードを削除しません。各単語の正解数・不正解数を合計し、最新の復習状態を新しい共有進捗テーブルへコピーします。適用後にLexicalを再公開してください。
+
 ## 3. Googleログインを設定する
 
 1. [Google Cloud](https://console.cloud.google.com/)で自分のプロジェクトを作成し、[Google Auth Platform](https://console.cloud.google.com/auth/overview)を開きます。`Branding` でアプリ名を **Lexical** にし、サポート・連絡用メールを指定します。ホームページには公開したLexicalのURL、プライバシーポリシーには `https://OWNER.github.io/lexical/privacy.html` を使えます。公開するページの案内文や運営者への連絡方法は `public/privacy.html` にあります。 [Googleのブランド設定・確認](https://developers.google.com/identity/protocols/oauth2/production-readiness/brand-verification)
@@ -100,6 +106,7 @@ pnpm test
 - **Googleの `redirect_uri_mismatch`** — Googleの承認済みリダイレクトURIをSupabaseに表示されたCallback URLと照合します。
 - **Googleから戻るURLが違う** — SupabaseのSite URLとRedirect URLsの `/lexical/` を確認します。 `localhost` と `127.0.0.1` は別のアドレスとして扱います。
 - **ログインできるが読み込みや保存に失敗する** — 初期SQLを対象プロジェクトに適用したか、Data APIが有効か、プロジェクトが稼働中かを確認します。
+- **更新後に進捗が表示されない** — `202611280001_unified_progress.sql` を1回実行し、GitHub Actionsの最新デプロイが成功したことを確認します。
 - **ロゴだけ古い** — `public` を変更したことと最新Pushのデプロイ成功を確認し、強制再読み込みを試します。
 
 公開用の単語データには出典・使用版・改変区分を付けています。Wiktionary・NGSL・TSL由来の翻案部分はCC BY-SA 4.0を引き継ぎ、WordNetや音声関連の表示は各ライセンスに従います。サイトの「出典・ライセンス」から確認できます。 [Wiktionary](https://en.wiktionary.org/wiki/Wiktionary:Copyrights) · [NGSL](https://www.newgeneralservicelist.com/new-general-service-list) · [TSL](https://www.newgeneralservicelist.com/toeic-service-list) · [WordNet](https://wordnet.princeton.edu/license-and-commercial-use)

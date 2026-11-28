@@ -43,14 +43,16 @@ async function goal(page, value) {
   await page.locator('#goal-setup').waitFor({ state: 'detached' });
 }
 async function setMethod(page, method) {
+  while (!await page.locator('[data-method]').count()) await page.locator('[data-action=setup-back]').click();
   const b = page.locator('[data-method="' + method + '"]');
   await b.click();
-  await page.locator('[data-method="' + method + '"][aria-pressed=true]').waitFor();
+  await page.locator('[data-mode]').first().waitFor();
 }
-async function normal(page, { method = 'en-ja', category = '', start = 1, end = start, random = false } = {}) {
+async function normal(page, { method = 'en-ja', category = 'NGSL', start = 1, end = start, random = false } = {}) {
   await nav(page, 'home');
   await setMethod(page, method);
   await page.locator('[data-mode=normal]').click();
+  await page.locator('#start-form [name=category]').waitFor();
   await page.locator('#start-form [name=category]').selectOption(category);
   await page.locator('#start-form [name=order]').selectOption(random ? 'random' : 'registered');
   await page.locator('#start-form [name=start]').fill(String(start));
@@ -124,7 +126,7 @@ try {
   await waitText(page.locator('.feedback-label'), /^正解$/);
   assert.equal(await page.locator('#question-title mark').innerText(), '-');
   assert.equal((await page.locator('.typed-answer .letter-match').allTextContents()).join(''), 'ebook');
-  assert.equal((await snapshot(page)).progress[ebook.id + ':typing'].correct, 1);
+  assert.equal((await snapshot(page)).progress[ebook.id].correct, 1);
   await page.waitForFunction(() => window.lexicalAudioStarts > 0);
   const amount = await page.evaluate(() => window.lexicalAudioStarts);
   await page.getByRole('button', { name: '発音を聴く' }).click();

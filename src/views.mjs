@@ -22,9 +22,9 @@ export function nav(view) {
   ].map(([route, symbol, label]) => `<a href="#${route}"${route === current ? ' aria-current="page"' : ''}>${icon(symbol, 18)} ${label}</a>`).join('')}</nav>`;
 }
 
-const categoryOptions = [['', 'すべての単語'], ...CATEGORIES.map(c => [c.id, c.id + ' · ' + c.detail])];
-const starOptions = [['', 'すべての重要度'], ...[5, 4, 3, 2, 1].map(n => [n, '★'.repeat(n) + '（' + n + '）'])];
+const categoryOptions = CATEGORIES.map(c => [c.id, c.id + ' · ' + c.detail]);
 const methodLabel = method => METHODS.find(m => m.id === method)?.title ?? '';
+const membershipOrder = (a, b) => CATEGORIES.findIndex(c => c.id === a.category) - CATEGORIES.findIndex(c => c.id === b.category);
 export const dateLabel = ms => ms ? new Intl.DateTimeFormat('ja-JP', {
   dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Tokyo',
 }).format(ms) : '—';
@@ -50,7 +50,7 @@ export function masteryBar(progress, from = progress.bar) {
 }
 
 function stats(state, now) {
-  const t = totals(state, state.settings.method, now);
+  const t = totals(state, now);
   const goal = state.settings.goal;
   const pct = goal ? Math.min(100, (t.today * 100) / goal) : 0;
   return `<div class="stats-grid">
@@ -58,7 +58,7 @@ function stats(state, now) {
       <p class="muted">今日の学習</p><div class="stat-value">${number(t.today)}<small> ${goal ? '/ ' + number(goal) : ''} 語分</small></div>
       <div class="meter" role="meter" aria-label="今日の目標進捗" aria-valuenow="${pct}"><i style="width:${pct}%"></i></div></div></article>
     <article class="card stat"><span class="stat-icon yellow">${icon('flame', 20)}</span><div><p class="muted">習得済み</p>
-      <div class="stat-value">${number(t.mastered)}<small> 語</small></div><div class="stat-note">${h(methodLabel(state.settings.method))}</div></div></article>
+      <div class="stat-value">${number(t.mastered)}<small> 語</small></div><div class="stat-note">3つの回答方法で共通</div></div></article>
     <article class="card stat"><span class="stat-icon purple">${icon('chart', 20)}</span><div><p class="muted">累計の学習</p>
       <div class="stat-value">${number(t.count)}<small> 語分</small></div><div class="stat-note">レベル ${number(t.level)}</div></div></article>
   </div>`;
@@ -72,13 +72,13 @@ function goalForm(state, onboarding = false, locked = false) {
   </form>`;
 }
 
-export function home(state, spec, poolSize, now, locked) {
+export function home(state, spec, poolSize, indexCount, now, locked, setupStep = 1) {
   const isRecommended = spec.mode === 'recommended';
   const normal = spec.mode === 'normal';
   const active = inProgress(state.session);
   const left = remainingToday(state, now);
   const count = spec.count ?? (isRecommended ? left : 20);
-  const ready = normal ? spec.start <= spec.end && spec.end <= poolSize : count > 0;
+  const ready = normal ? spec.start <= spec.end && spec.end <= indexCount : count > 0;
   const resume = active ? `<aside class="card resume"><div class="resume-title">${icon('clock')}<div><strong>途中の学習</strong>
     <p>${h(methodLabel(state.session.method))} · ${number(state.session.correct)} / ${number(state.session.ids.length)} 語 正解済み</p></div></div>
     <div class="actions">${button('続きから', 'resume', 'primary', '', locked)}${button('セットを破棄', 'discard', 'soft', '', locked)}</div></aside>` : '';
@@ -101,29 +101,32 @@ export function home(state, spec, poolSize, now, locked) {
   <section id="setup" class="study-setup" aria-labelledby="setup-title">
     <div class="section-head"><div><h2 id="setup-title">学習をはじめる</h2><p class="muted">回答方法と出題範囲を選んでください。</p></div></div>
     ${state.settings.goal === null ? `<div class="card onboarding"><div><h3>今日からの目標</h3><p>まず1日に学習したい語数を設定してください。</p></div>${goalForm(state, true, locked)}</div>` : ''}
-    <form id="start-form" class="card setup-card">
-      ${steps('回答方法', 'method', METHODS, state.settings.method)}
-      ${steps('学習モード', 'mode', MODES, spec.mode)}
-      <fieldset class="step range"><legend>出題する単語</legend>
+    <form id="start-form" class="card setup-card setup-wizard" data-step="${setupStep}">
+      <div class="wizard-status"><span class="${setupStep === 1 ? 'active' : ''}">1 回答方法</span><span class="${setupStep === 2 ? 'active' : ''}">2 学習モード</span><span class="${setupStep === 3 ? 'active' : ''}">3 出題英単語</span></div>
+      <div class="wizard-stage">
+      ${setupStep === 1 ? steps('回答方法', 'method', METHODS, state.settings.method) : ''}
+      ${setupStep === 2 ? steps('学習モード', 'mode', MODES, spec.mode) : ''}
+      ${setupStep === 3 ? `<fieldset class="step range"><legend>出題英単語</legend>
         <div class="field-grid">
           ${select('リスト', 'category', categoryOptions, spec.category)}
-          ${spec.category !== 'SUPPLEMENTARY' ? select('重要度', 'stars', starOptions, spec.stars) : ''}
           ${!isRecommended ? select('順序', 'order', [['registered', '登録順'], ['random', 'ランダム']], spec.order) : ''}
         </div>
-        ${normal ? `<div class="field-grid number-range">${numeric('start', spec.start, Math.max(1, poolSize), '開始番号')}
-          ${numeric('end', spec.end, Math.max(1, poolSize), '終了番号')}</div>
-          <p class="help">選択したリストと重要度で絞り込んだ後の登録順です。1〜${number(poolSize)}番から指定できます。</p>` :
+        ${normal ? `<div class="field-grid number-range">${numeric('start', spec.start, Math.max(1, indexCount), '開始 Index')}
+          ${numeric('end', spec.end, Math.max(1, indexCount), '終了 Index')}</div>
+          <p class="help">Indexはリスト内の登録順で、原則30語ずつにまとめています。Index 1〜${number(indexCount)}から指定できます。</p>` :
           `<div class="field-grid count-range">${numeric('count', count || '', MAX_GOAL, '学習する語数')}</div>
           ${isRecommended ? `<label class="check-row"><input name="includeEarly" type="checkbox"${spec.includeEarly ? ' checked' : ''}>復習予定前の既習語も含める</label>
           <p class="help">${left ? '今日の目標まであと ' + number(left) + ' 語分。' : (state.settings.goal ? '今日の目標は達成済みです。' : '')}
             復習予定を迎えた単語から選び、足りない分を未学習語で補います。</p>` :
             '<p class="help">手動で苦手タグを付けた単語が対象です。指定より少ない場合は対象全語を出題します。</p>'}`}
-      </fieldset>
+      </fieldset>` : ''}
+      </div>
       <div class="setup-actions"><p><strong id="pool-count">${number(poolSize)}</strong> 語が対象
-        <span class="help">${spec.category ? h(spec.category) : '全リスト'}${spec.stars ? ' · 重要度 ' + '★'.repeat(spec.stars) : ''}</span></p>
-        ${isRecommended && !left && state.settings.goal && spec.count === null
+        <span class="help">${h(spec.category)}</span></p>
+        ${setupStep > 1 ? button('戻る', 'setup-back', 'soft') : ''}
+        ${setupStep < 3 ? '' : (isRecommended && !left && state.settings.goal && spec.count === null
           ? button('追加で学習する', 'extra-study', 'primary', 'book', locked)
-          : `<button class="btn primary" id="start-button" type="submit"${disabled(locked || !ready || poolSize === 0 || state.settings.goal === null)}>${icon('book', 19)} この設定で開始</button>`}
+          : `<button class="btn primary" id="start-button" type="submit"${disabled(locked || !ready || poolSize === 0 || state.settings.goal === null)}>${icon('book', 19)} この設定で開始</button>`) }
       </div>
       <div id="setup-error" class="form-error" role="status"></div>
     </form>
@@ -198,7 +201,7 @@ export function lesson(word, session, revealed, feedback, state, typingDraft, lo
   const answerVisible = englishFirst || revealed || feedback;
   const typed = feedback?.input !== null && feedback?.input !== undefined ? grade(word, feedback.input) : null;
   const variant = typed?.accepted && typed.differences.some(p => p.changed);
-  const progress = effectiveProgress(state.progress[progressKey(word.id, session.method)]);
+  const progress = effectiveProgress(state.progress[progressKey(word.id)]);
   const beforeCount = animateAnswer && feedback?.correct ? session.correct - 1 : session.correct;
   const countPercent = count => count * 100 / session.ids.length;
   const gained = feedback?.correct && feedback.afterBar > feedback.beforeBar;
@@ -252,16 +255,15 @@ export function result(session, byId) {
   </section>`;
 }
 
-export function wordsPage(filters, selectedMethod) {
+export function wordsPage(filters) {
   return `<section class="listing">
     <div class="section-head"><div><h1>単語一覧</h1><p class="muted">英語・日本語で検索し、習得状況と苦手タグを確認できます。</p></div></div>
     <form id="word-filters" class="card filter-card">
       <label class="search-field">${icon('search', 22)}<span class="sr-only">単語を検索</span>
         <input type="search" name="query" placeholder="単語・日本語訳を検索" value="${h(filters.query)}" autocomplete="off"></label>
-      <div class="field-grid">${select('リスト', 'category', categoryOptions, filters.category)}
-        ${select('重要度', 'stars', starOptions, filters.stars, filters.category === 'SUPPLEMENTARY' ? 'disabled' : '')}
+      <div class="field-grid">${select('リスト', 'category', [['', 'すべてのリスト'], ...categoryOptions], filters.category)}
         ${select('習得状況', 'status', [['', 'すべて'], ['mastered', '習得済み'], ['learning', '学習中'], ['new', '未学習'], ['difficult', '苦手タグ']], filters.status)}
-        ${select('表示する回答方法', 'viewMethod', METHODS.map(m => [m.id, m.title]), selectedMethod)}
+        ${select('表示数', 'pageSize', [[30, '30語'], [50, '50語'], [100, '100語']], filters.pageSize)}
       </div>
     </form><div id="word-results"></div></section>`;
 }
@@ -278,11 +280,11 @@ export function wordResults(words, state, page, size, locked, now) {
       <span>/ ${pages} ページ</span><button type="submit" class="btn secondary">移動</button>
     </form>` : ''}</div>
     ${sub.length ? `<ul class="word-results">${sub.map(word => {
-      const m = word.memberships[0];
-      const p = effectiveProgress(state.progress[progressKey(word.id, state.settings.method)], now);
+      const m = [...word.memberships].sort(membershipOrder)[0];
+      const p = effectiveProgress(state.progress[progressKey(word.id)], now);
       return `<li class="card word-row"><span class="word-no">${number(word.order)}</span><div class="word-main">
         <a href="#word/${h(word.id)}" lang="en">${h(word.lemma)}</a><p>${word.senses.map(s => h(s.japanese)).join(' / ')}</p></div>
-        <div class="word-meta"><span>${h(m.category)}</span>${m.stars ? `<span class="stars" aria-label="重要度 ${m.stars}">${'★'.repeat(m.stars)}</span>` : ''}</div>
+        <div class="word-meta"><span>${h(m.category)}</span><span class="index-label">Index ${number(m.index)}</span></div>
         <div class="word-progress">${masteryBar(p)}<small>${p.mastered ? '習得済み' : p.lastAnswered === null ? '未学習' : '学習中'}</small></div>
         <button type="button" class="icon-button tag ${state.tags[word.id] ? 'tagged' : ''}" data-tag="${word.id}"
           aria-label="${h(word.lemma)} の苦手タグ" aria-pressed="${Boolean(state.tags[word.id])}" title="苦手タグ"${disabled(locked)}>${icon('bookmark', 20)}</button></li>`;
@@ -292,15 +294,15 @@ export function wordResults(words, state, page, size, locked, now) {
 }
 
 export function wordDetail(word, state, now, locked) {
-  const progress = effectiveProgress(state.progress[progressKey(word.id, state.settings.method)], now);
+  const progress = effectiveProgress(state.progress[progressKey(word.id)], now);
   const probability = recall(progress, now);
   return `<section class="detail-shell"><p><a class="text-button" href="#words">単語一覧に戻る</a></p>
     <article class="card word-detail"><div class="word-detail-top"><div><h1 lang="en">${h(word.lemma)}</h1>
-      <p class="muted">${word.memberships.map(m => h(m.category) + (m.rank ? ' · 頻度順位 ' + number(m.rank) : '')).join(' / ')}</p></div>
+      <p class="muted">${[...word.memberships].sort(membershipOrder).map(m => h(m.category) + ' · Index ' + number(m.index)).join(' / ')}</p></div>
       <button class="btn secondary" data-tag="${word.id}" aria-pressed="${Boolean(state.tags[word.id])}"${disabled(locked)}>${icon('bookmark', 19)}
         ${state.tags[word.id] ? '苦手タグを外す' : '苦手にする'}</button></div>
     ${pronunciation(word)}<p class="audio-status" data-audio-status role="status"></p>${meanings(word, true)}
-    <div class="detail-stats"><h2>学習状態 <small>${h(methodLabel(state.settings.method))}</small></h2>
+    <div class="detail-stats"><h2>学習状態 <small>3つの回答方法で共通</small></h2>
       ${masteryBar(progress)}
       <p>正解 ${number(progress.correct)} 回 / 不正解 ${number(progress.incorrect)} 回</p>
       <p>次の復習 ${h(dateLabel(progress.due))}</p>
@@ -325,10 +327,22 @@ export function calendar(state, month, day) {
     <p class="calendar-detail" role="status">${h(day)} · ${number(state.days[day] ?? 0)} 語分学習</p>`;
 }
 
+function weeklyChart(state) {
+  const today = studyDay();
+  const base = Date.parse(today + 'T00:00:00Z');
+  const rows = Array.from({ length: 7 }, (_, offset) => {
+    const stamp = new Date(base - (6 - offset) * 86_400_000).toISOString().slice(0, 10);
+    return { stamp, value: state.days[stamp] ?? 0 };
+  });
+  const max = Math.max(1, ...rows.map(row => row.value));
+  const weekday = new Intl.DateTimeFormat('ja-JP', { weekday: 'short', timeZone: 'Asia/Tokyo' });
+  return `<section class="weekly-chart" aria-label="直近7日間の学習量"><div class="weekly-chart-head"><h2>直近1週間の学習</h2><span>正解した語数</span></div>
+    <div class="weekly-bars">${rows.map(row => `<div class="weekly-bar"><span class="weekly-value">${row.value || ''}</span><i style="height:${Math.max(4, Math.round(row.value * 100 / max))}%" title="${h(row.stamp)} ${number(row.value)}語"></i><small>${weekday.format(new Date(row.stamp + 'T12:00:00+09:00'))}</small></div>`).join('')}</div></section>`;
+}
+
 export function records(state, month, day, now) {
   return `<section><div class="section-head"><div><h1>学習記録</h1><p class="muted">正解した分の学習量と、習得済みの単語を確認できます。</p></div>
-    ${select('習得済みを集計する回答方法', 'viewMethod', METHODS.map(m => [m.id, m.title]), state.settings.method)}</div>
-    ${stats(state, now)}<div class="card calendar-card" id="calendar-card">${calendar(state, month, day)}</div>
+    </div>${stats(state, now)}<div class="card calendar-card">${weeklyChart(state)}<div id="calendar-card">${calendar(state, month, day)}</div></div>
     <p class="help">学習日は日本時間の午前5時に切り替わります。レベルは累計の学習量が ${LEVEL_ANSWERS} 語分増えるごとに上がります。</p>
     <p><a class="btn secondary" href="#words">単語ごとの習得度を見る</a></p></section>`;
 }
@@ -359,7 +373,7 @@ export function sources(data) {
     : '<p class="muted" role="status">出典を読み込んでいます…</p>';
   return `<section><div class="section-head"><div><h1>出典・ライセンス</h1><p class="muted">単語、訳、発音の出典。</p></div></div>
     <article class="card settings-card"><h2>英単語と日本語訳</h2>${credit}
-      <p>リスト内の頻度順位から重要度を追加しています。各語の使用版・改変区分は単語一覧の詳細から確認できます。</p>
+      <p>各リストは登録順にIndexへまとめています。各語の使用版・改変区分は単語一覧の詳細から確認できます。</p>
       <p><a href="./data/attribution.json">全単語の出典データ（JSON）</a></p></article>
     <article class="card settings-card"><h2>発音</h2>
       <p>PhoneticのCMUdict変換を利用しています。複数の読みと意味の対応は、候補として表示します。</p>

@@ -10,6 +10,7 @@ const secondClient = 'd1ba23af-0303-41ca-a838-51952c63ff11';
 const guest = 'cf4bfd2a-a69d-4ddf-912c-21371d0adcb8';
 const word = 'lex_00000000000000000000000000000001';
 const migration = await readFile('supabase/migrations/202611240001_lexical.sql', 'utf8');
+const unifiedMigration = await readFile('supabase/migrations/202611280001_unified_progress.sql', 'utf8');
 
 test('real PostgreSQL schema: CAS, client receipts, import receipt, RLS and identity enforcement', async () => {
   const db = new PGlite();
@@ -20,6 +21,7 @@ test('real PostgreSQL schema: CAS, client receipts, import receipt, RLS and iden
     grant usage on schema auth to authenticated, anon;`);
   await db.query('insert into auth.users(id) values ($1),($2)', [owner, other]);
   await db.exec(migration);
+  await db.exec(unifiedMigration);
   const auth = async sub => {
     await db.exec('reset role; set role authenticated');
     await db.query("select set_config('request.jwt.claim.sub', $1, false)", [sub]);
@@ -53,10 +55,10 @@ test('real PostgreSQL schema: CAS, client receipts, import receipt, RLS and iden
     assert.equal((await commit(owner, 3, secondClient, 4, { tags: { [word]: false }, session: null })).status, 'applied');
     assert.deepEqual((await snapshot(owner)).tags, {});
     assert.equal((await snapshot(owner)).session, null);
-    assert.deepEqual((await snapshot(owner)).progress[word + ':typing'], progress);
+    assert.deepEqual((await snapshot(owner)).progress[word], progress);
     await assert.rejects(db.exec('update public.lexical_progress set state = state'), /permission denied/i);
     await auth(other);
-    for (const table of ['profiles','progress','days','tags']) {
+    for (const table of ['profiles','progress','word_progress','days','tags']) {
       assert.equal((await db.query('select * from public.lexical_' + table + ' where user_id=$1', [owner])).rows.length, 0);
     }
     await assert.rejects(snapshot(owner), /Account does not match/);

@@ -11,9 +11,9 @@ export const MODES = [
 ];
 
 export const CATEGORIES = [
+  { id: 'SUPPLEMENTARY', title: 'SUPPLEMENTARY', detail: '曜日・数詞など' },
   { id: 'NGSL', title: 'NGSL', detail: '基本英単語' },
   { id: 'TSL', title: 'TSL', detail: 'TOEIC対策語' },
-  { id: 'SUPPLEMENTARY', title: 'SUPPLEMENTARY', detail: '曜日・数詞など' },
 ];
 
 export const DAY = 86_400_000;

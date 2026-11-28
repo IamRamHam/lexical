@@ -118,7 +118,7 @@ button.text-button:hover { text-decoration: underline; }
 .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin: 18px 0 28px; }
 .stat { min-width: 0; min-height: 116px; display: grid; grid-template-columns: auto minmax(0,1fr); gap: 13px; align-items: start; padding: 16px; }
 .stat-icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 11px; background: #e1f2d9; color: var(--dark-green); }
-.stat-icon.yellow { background: #fff1cd; color: #965122; }
+.stat-icon.yellow { background: #ffe4dc; color: #bf3e2e; }
 .stat-icon.purple { background: #eeebf8; color: #534375; }
 .stat .muted { font-weight: 670; font-size: .875rem; }
 .stat-value { font: 760 clamp(1.55rem, 3vw, 2.3rem)/1.35 var(--en); letter-spacing: -.045em; }
@@ -142,6 +142,11 @@ button.text-button:hover { text-decoration: underline; }
 .section-head .field { min-width: min(240px, 100%); }
 .study-setup { margin: 36px 0 0; }
 .setup-card { padding: 25px; }
+.wizard-status { display: flex; gap: 8px; margin-bottom: 20px; color: var(--muted); font-size: .82rem; font-weight: 700; }
+.wizard-status span { flex: 1; min-width: 0; padding: 7px 8px; border-bottom: 2px solid #dce5da; text-align: center; }
+.wizard-status .active { color: var(--dark-green); border-color: #5b9262; }
+.wizard-stage { min-height: 172px; animation: wizard-in .26s ease both; }
+@keyframes wizard-in { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
 .resume, .onboarding { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px; padding: 17px 22px; margin: 18px 0; }
 .resume { background: #f5faef; }
 .resume-title { display: flex; gap: 10px; align-items: center; }
@@ -181,6 +186,10 @@ select { appearance: none; padding-right: 34px; background-image: linear-gradien
 .quiz-progress { display: grid; justify-items: center; width: min(100%, 540px); gap: 5px; margin: 0 auto 17px; white-space: nowrap; font-family: var(--en); }
 .quiz-progress small { color: var(--muted); }
 .quiz-card { padding: clamp(18px,5vw,42px); text-align: center; }
+.quiz-card.swipe-left { animation: quiz-swipe-left .19s ease both; }
+.quiz-card.swipe-right { animation: quiz-swipe-right .19s ease both; }
+@keyframes quiz-swipe-left { to { opacity: .12; transform: translateX(-62px) rotate(-1.5deg); background: #fff0ed; } }
+@keyframes quiz-swipe-right { to { opacity: .12; transform: translateX(62px) rotate(1.5deg); background: #edf8e9; } }
 .quiz-task { color: var(--muted); font-weight: 670; margin-bottom: 16px; }
 .quiz-word { margin: 6px 0 18px; }
 .quiz-card > .meanings + .quiz-word { margin-top: 17px; }
@@ -250,9 +259,10 @@ mark { background: var(--yellow); color: inherit; padding: .01em .025em; border-
 .word-main a { color: var(--ink); font-weight: 740; font-size: 1.14rem; overflow-wrap: anywhere; }
 .word-main p, .word-progress small { color: var(--muted); font-size: .875rem; }
 .word-meta { display: flex; flex-direction: column; font: 680 .875rem var(--en); }
-.stars { color: #916018; letter-spacing: .025em; }
+.index-label { color: #4f6953; font-size: .8rem; }
 .tagged { color: #724e16; background: var(--yellow); }
 .tagged svg { fill: #805b291c; }
+.tagged:hover, .tagged:focus-visible { color: #653e0a; background: #f4c65d; border-color: #bd8520; }
 .pagination { display: flex; justify-content: center; align-items: center; gap: 12px; margin: 16px 0; flex-wrap: wrap; }
 .word-detail { margin-top: 12px; padding: clamp(17px,4vw,32px); }
 .word-detail-top { display: flex; gap: 12px; align-items: start; justify-content: space-between; flex-wrap: wrap; }
@@ -264,6 +274,15 @@ details summary { font-weight: 700; }
 .word-detail h3 { margin-top: 12px; }
 
 .calendar-card { width: min(700px,100%); margin-inline: auto; padding: clamp(13px,4vw,24px); }
+.weekly-chart { height: 128px; padding: 3px 3px 13px; margin-bottom: 17px; border-bottom: 1px solid var(--line); }
+.weekly-chart-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.weekly-chart-head h2 { font-size: 1rem; }
+.weekly-chart-head span { color: var(--muted); font-size: .78rem; }
+.weekly-bars { height: 91px; display: grid; grid-template-columns: repeat(7, 1fr); gap: 7px; align-items: end; padding-top: 5px; }
+.weekly-bar { height: 100%; display: grid; grid-template-rows: 14px 1fr 16px; align-items: end; text-align: center; }
+.weekly-value { min-height: 14px; color: var(--muted); font: .75rem var(--en); }
+.weekly-bar i { display: block; width: min(100%, 34px); justify-self: center; min-height: 4px; border-radius: 5px 5px 2px 2px; background: linear-gradient(#85bc7e, #4f9158); transition: height .32s ease; }
+.weekly-bar small { align-self: end; color: var(--muted); font-size: .72rem; }
 .calendar-head { display: flex; justify-content: space-between; align-items: center; gap: 7px; flex-wrap: wrap; margin-bottom: 10px; }
 .calendar { display: grid; grid-template-columns: repeat(7,minmax(0,1fr)); gap: 6px; }
 .weekday { text-align: center; color: var(--muted); font-size: .875rem; }
@@ -323,6 +342,9 @@ pre { max-width: 100%; overflow: auto; white-space: pre-wrap; }
   .stat-value { font-size: 1.5rem; }
   .stat-value small, .stat-note { font-size: .8rem; }
   .setup-card { padding: 13px; }
+  .wizard-status { gap: 3px; margin-bottom: 14px; font-size: .72rem; }
+  .wizard-status span { padding-inline: 2px; }
+  .wizard-stage { min-height: 194px; }
   .choice-grid { grid-template-columns: 1fr; gap: 6px; }
   .choice { min-height: 65px; grid-template-columns: auto 1fr; column-gap: 9px; row-gap: 1px; padding: 9px 11px; }
   .choice-icon { grid-row: span 2; width: 34px; height: 34px; }

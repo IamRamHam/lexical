@@ -24,7 +24,7 @@ test('JST 04:59:59.999 and 05:00:00.000 belong to different study days', () => {
   assert.equal(studyDay(Date.parse('2026-11-24T05:00:00.000+09:00')), '2026-11-24');
 });
 
-test('two 50-word lessons count 100, retries count once, and methods remain separate', () => {
+test('two 50-word lessons count 100, retries count once, and methods share word progress', () => {
   let state = settings(emptyState(), 50);
   for (const id of ['first', 'second']) {
     state = start(state, id);
@@ -42,9 +42,8 @@ test('two 50-word lessons count 100, retries count once, and methods remain sepa
     state = start(state, method, options(method));
     state = transition(state, answer(state, false));
   }
-  assert.equal(state.progress[progressKey(first, 'en-ja')].correct, 2);
-  assert.equal(state.progress[progressKey(first, 'ja-en')].incorrect, 1);
-  assert.equal(state.progress[progressKey(first, 'typing')].incorrect, 1);
+  assert.equal(state.progress[progressKey(first)].correct, 2);
+  assert.equal(state.progress[progressKey(first)].incorrect, 2);
   assert.equal(totals(state, 'typing', now).today, 100);
 });
 
@@ -159,7 +158,7 @@ test('recommendation orders due by bar/date/registration, then unseen, then opti
   }
   assert.deepEqual(recommendation(words.slice(0, 7), state, 'typing', now), [d, b, c, a, e]);
   assert.deepEqual(recommendation(words.slice(0, 7), state, 'typing', now, true), [d, b, c, a, e, g, f]);
-  assert.deepEqual(recommendation(words.slice(0, 7), state, 'en-ja', now), [a, b, c, d, e, f, g]);
+  assert.deepEqual(recommendation(words.slice(0, 7), state, 'en-ja', now), [d, b, c, a, e]);
   state.days[studyDay(now)] = 55;
   assert.equal(remainingToday(state, now), 0);
   assert.equal(start(state, 'normal-over-goal').session.ids.length, 50);

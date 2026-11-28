@@ -1,12 +1,35 @@
 import { CATEGORIES, DEFAULT_SETTINGS, LEVEL_ANSWERS, MASTERY_EXPIRY_MS, MAX_GOAL, METHODS, REVIEW } from './rules.mjs';
 
 export const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-export const progressKey = (id, method) => id + ':' + method;
+// Progress belongs to the word, rather than to a particular answer method.
+// Keep the optional second argument for callers from older pages and saved sessions.
+export const progressKey = id => id;
 export const EMPTY_PROGRESS = Object.freeze({
   correct: 0, incorrect: 0, streak: 0, bar: 0, mastered: false,
   lastAnswered: null, halfLife: null, due: null,
 });
 export const emptyState = () => ({ settings: { ...DEFAULT_SETTINGS }, progress: {}, days: {}, tags: {}, session: null });
+
+// Older local and cloud snapshots kept one progress record per answer method.
+// The newest format has one shared record per word. Counts are retained and
+// the most recently answered record supplies the current review state.
+export function normalizeState(value, now = Date.now()) {
+  const state = { ...emptyState(), ...value, settings: { ...DEFAULT_SETTINGS, ...value?.settings },
+    progress: {}, days: { ...(value?.days ?? {}) }, tags: { ...(value?.tags ?? {}) } };
+  for (const [legacyKey, raw] of Object.entries(value?.progress ?? {})) {
+    const wordId = legacyKey.split(':')[0];
+    const current = state.progress[wordId];
+    const candidate = effectiveProgress(raw, now);
+    if (!current) { state.progress[wordId] = { ...candidate }; continue; }
+    const latest = (candidate.lastAnswered ?? -1) > (current.lastAnswered ?? -1) ? candidate : current;
+    state.progress[wordId] = {
+      ...latest,
+      correct: (current.correct ?? 0) + (candidate.correct ?? 0),
+      incorrect: (current.incorrect ?? 0) + (candidate.incorrect ?? 0),
+    };
+  }
+  return state;
+}
 
 export function studyDay(timestamp = Date.now()) {
   // UTC+9, with the first five hours still belonging to the preceding study day.
@@ -61,18 +84,16 @@ export const currentWordId = session => session?.ids[session.cursor] ?? session?
 export const inProgress = session => currentWordId(session) !== null;
 export const remainingToday = (state, now = Date.now()) => Math.max(0, (state.settings.goal ?? 0) - (state.days[studyDay(now)] ?? 0));
 
-export function totals(state, method, now = Date.now()) {
+export function totals(state, methodOrNow = Date.now(), legacyNow) {
+  const now = typeof legacyNow === 'number' ? legacyNow : typeof methodOrNow === 'number' ? methodOrNow : Date.now();
   let mastered = 0;
-  for (const [key, item] of Object.entries(state.progress)) {
-    if (key.endsWith(':' + method) && effectiveProgress(item, now).mastered) mastered++;
-  }
+  for (const item of Object.values(state.progress)) if (effectiveProgress(item, now).mastered) mastered++;
   const count = Object.values(state.days).reduce((a, b) => a + b, 0);
   return { mastered, count, today: state.days[studyDay(now)] ?? 0, level: 1 + Math.floor(count / LEVEL_ANSWERS) };
 }
 
-export function eligibleWords(words, category, stars) {
-  return words.filter(word => word.memberships.some(m =>
-    (!category || m.category === category) && (!stars || m.stars === Number(stars))));
+export function eligibleWords(words, category) {
+  return words.filter(word => word.memberships.some(m => !category || m.category === category));
 }
 
 export function shuffle(items, random = Math.random) {
@@ -84,10 +105,12 @@ export function shuffle(items, random = Math.random) {
   return copy;
 }
 
-export function recommendation(words, state, method, now, includeEarly = false) {
+export function recommendation(words, state, methodOrNow, nowOrEarly = false, legacyEarly = false) {
+  const now = typeof methodOrNow === 'number' ? methodOrNow : nowOrEarly;
+  const includeEarly = typeof methodOrNow === 'number' ? nowOrEarly : legacyEarly;
   const due = [], unseen = [], early = [];
   for (const word of words) {
-    const p = effectiveProgress(state.progress[progressKey(word.id, method)], now);
+    const p = effectiveProgress(state.progress[progressKey(word.id)], now);
     if (p.lastAnswered === null) unseen.push(word);
     else if (p.due <= now) due.push({ word, p });
     else if (includeEarly) early.push({ word, p });
@@ -98,15 +121,20 @@ export function recommendation(words, state, method, now, includeEarly = false) 
 }
 
 export function lessonPool(words, state, spec, now) {
-  const eligible = eligibleWords(words, spec.category, spec.stars);
+  const eligible = eligibleWords(words, spec.category);
   if (spec.mode === 'difficult') return eligible.filter(w => state.tags[w.id]);
-  if (spec.mode === 'recommended') return recommendation(eligible, state, spec.method, now, spec.includeEarly);
+  if (spec.mode === 'recommended') return recommendation(eligible, state, now, spec.includeEarly);
   return eligible;
 }
 
 export function makeSession(words, state, spec, now, id, random) {
   const pool = lessonPool(words, state, spec, now);
-  const part = spec.mode === 'normal' ? pool.slice(spec.start - 1, spec.end) : pool;
+  const part = spec.mode === 'normal' ? pool.filter(word => word.memberships.some(m => {
+    // `index` is present in the catalog. The fallback keeps pre-v1.1 saved
+    // lesson fixtures using their original item-range semantics.
+    const index = m.index ?? m.rank ?? word.order;
+    return m.category === spec.category && index >= spec.start && index <= spec.end;
+  })) : pool;
   const ordered = spec.mode !== 'recommended' && spec.order === 'random' ? shuffle(part, random) : part;
   const chosen = spec.mode === 'normal' ? ordered : ordered.slice(0, spec.count);
   if (!chosen.length) return null;
@@ -117,6 +145,8 @@ export function makeSession(words, state, spec, now, id, random) {
 }
 
 export function mergeGuest(account, guest, now) {
+  account = normalizeState(account, now);
+  guest = normalizeState(guest, now);
   const state = {
     ...account, progress: { ...account.progress }, days: { ...account.days },
     tags: { ...account.tags, ...guest.tags },
@@ -175,7 +205,7 @@ export function transition(state, action) {
       const wordId = currentWordId(s);
       if (!wordId || s.id !== action.sessionId || s.cursor !== action.index ||
           wordId !== action.wordId || typeof action.correct !== 'boolean') return state;
-      const key = progressKey(action.wordId, s.method);
+      const key = progressKey(action.wordId);
       const day = studyDay(now);
       const previous = effectiveProgress(state.progress[key], now);
       const next = answerProgress(previous, action.correct, now);

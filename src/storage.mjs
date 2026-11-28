@@ -1,4 +1,4 @@
-import { emptyState, transition } from './study.mjs';
+import { emptyState, normalizeState, transition } from './study.mjs';
 
 export function openDatabase() {
   return new Promise((resolve, reject) => {
@@ -52,7 +52,14 @@ const hasGuestData = s => s.settings.updatedAt || s.session || Object.keys(s.tag
 export function guestStore(db) {
   return {
     kind: 'guest',
-    async load() { return (await updateLocal(db, key, previous => previous ?? newVault())).guest.state; },
+    async load() {
+      const vault = await updateLocal(db, key, previous => {
+        const next = previous ?? newVault();
+        const normalized = normalizeState(next.guest.state);
+        return normalized === next.guest.state ? next : { ...next, guest: { ...next.guest, state: normalized } };
+      });
+      return vault.guest.state;
+    },
     async dispatch(action) {
       const value = await updateLocal(db, key, previous => {
         const vault = previous ?? newVault();
@@ -105,8 +112,7 @@ export function statePatch(previous, next) {
   }
   const progress = Object.entries(next.progress).filter(([id, state]) => previous.progress[id] !== state);
   if (progress.length) patch.progress = progress.map(([key, state]) => {
-    const [word_id, method] = key.split(':');
-    return { word_id, method, state };
+    return { word_id: key.split(':')[0], method: 'en-ja', state };
   });
   const days = Object.entries(next.days).filter(([day, value]) => previous.days[day] !== value);
   if (days.length) patch.days = Object.fromEntries(days);

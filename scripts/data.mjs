@@ -11,7 +11,7 @@ export const releaseArchive = 'data/release/site-data.json.gz';
 const expectedSourceHash = async () => (await readFile(sourceHashFile, 'utf8')).trim();
 
 const counts = { NGSL: 2809, TSL: 1250, SUPPLEMENTARY: 52 };
-const rows = {};
+const indexes = {};
 const senseSensitive = new Set(('read close lead wind minute present record refuse object conduct permit project ' +
   'produce suspect content tear bow bass live use house row invalid increase decrease resume does ' +
   'desert address console progress conflict contract contrast contest converse digest estimate graduate ' +
@@ -80,12 +80,15 @@ export async function buildData({ source, sourceSha256, sourceBytes }) {
   }
   const dictionary = await phoneticDictionary();
   for (const { id } of CATEGORIES) {
-    const list = source.words.flatMap(word => word.memberships.filter(m => m.category === id).map(m => ({ word, m })));
+    const list = source.words.flatMap((word, position) => word.memberships.filter(m => m.category === id).map(m => ({ word, m, position })));
     if (list.length !== counts[id]) throw new Error('カテゴリ件数が原本と一致しません: ' + id);
-    if (id === 'SUPPLEMENTARY') continue;
-    list.sort((a, b) => a.m.rank - b.m.rank || a.m.display_order - b.m.display_order);
-    if (list.some((x) => !Number.isInteger(x.m.rank) || x.m.rank < 1)) throw new Error('頻度順位が未入力: ' + id);
-    rows[id] = new Map(list.map(({ word }, i) => [word.id, 5 - Math.floor(i * 5 / list.length)]));
+    list.sort((a, b) => (a.m.rank ?? a.position) - (b.m.rank ?? b.position) || a.position - b.position);
+    if (id !== 'SUPPLEMENTARY' && list.some(x => !Number.isInteger(x.m.rank) || x.m.rank < 1)) {
+      throw new Error('頻度順位が未入力: ' + id);
+    }
+    const last = list.length % 30;
+    const indexCount = Math.ceil(list.length / 30) - (last > 0 && last < 10 ? 1 : 0);
+    indexes[id] = new Map(list.map(({ word }, index) => [word.id, Math.min(Math.ceil((index + 1) / 30), indexCount)]));
   }
   const referenceIds = new Set();
   const references = {};
@@ -138,7 +141,9 @@ export async function buildData({ source, sourceSha256, sourceBytes }) {
     const { case_insensitive, accent_omission_allowed, typographic_equivalents, punctuation_aliases } = word.answer_policy;
     return {
       id: word.id, lemma: word.lemma, order: i + 1, questionId: q.id,
-      memberships: word.memberships.map(m => ({ category: m.category, rank: m.rank, stars: rows[m.category]?.get(word.id) ?? null })),
+      memberships: word.memberships.map(m => {
+        return { category: m.category, rank: m.rank, index: indexes[m.category].get(word.id) };
+      }),
       senses, alts, answerPolicy: { case_insensitive, accent_omission_allowed, typographic_equivalents, punctuation_aliases },
       pronunciation: pronunciation(word, dictionary),
     };

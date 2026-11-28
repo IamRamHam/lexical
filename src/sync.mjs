@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { DEFAULT_SETTINGS } from './rules.mjs';
-import { transition } from './study.mjs';
+import { normalizeState, transition } from './study.mjs';
 import { acknowledgeImport, captureGuest, pendingImports, readLocal, statePatch, updateLocal } from './storage.mjs';
 
 export function connect(config) {
@@ -28,8 +28,8 @@ export function accountStore(db, client, accountId) {
   }
 
   async function load() {
-    const { revision, ...state } = await rpc('lexical_snapshot');
-    state.settings = { ...DEFAULT_SETTINGS, ...state.settings };
+    const { revision, ...rawState } = await rpc('lexical_snapshot');
+    const state = normalizeState({ ...rawState, settings: { ...DEFAULT_SETTINGS, ...rawState.settings } });
     snapshot = { revision, state };
     return state;
   }
